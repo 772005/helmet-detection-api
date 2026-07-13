@@ -350,7 +350,25 @@ def index() -> str:
         border-radius: 20px;
         background: #050916;
         border: 1px solid rgba(148, 163, 184, 0.14);
+        min-height: 480px;
+        max-height: 480px;
         overflow: auto;
+      }
+
+      .json-tools {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }
+
+      .ghost-button {
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 8px 12px;
+        font-size: 12px;
+        cursor: pointer;
       }
 
       pre {
@@ -446,9 +464,12 @@ def index() -> str:
             <span class="badge">Raw output</span>
           </div>
           <div class="json-box">
-            <pre id="json">Run a detection to see the response payload.</pre>
+            <pre id="json">Run a detection to see the compact response payload.</pre>
           </div>
-          <div class="footer-note">The response includes the image dimensions, detections, compliance summary, and the Roboflow status block.</div>
+          <div class="json-tools">
+            <button id="toggleJson" class="ghost-button" type="button">Show full payload</button>
+          </div>
+          <div class="footer-note">Default view hides large base64 data so this panel stays the same height as the image panel.</div>
         </div>
       </section>
     </div>
@@ -462,6 +483,46 @@ def index() -> str:
       const summaryBadge = document.getElementById("summaryBadge");
       const imageBadge = document.getElementById("imageBadge");
       const detectionList = document.getElementById("detectionList");
+      const toggleJsonButton = document.getElementById("toggleJson");
+
+      let showFullPayload = false;
+      let latestResponse = null;
+
+      function buildCompactResponse(data) {
+        return {
+          image: data.image || null,
+          latency_ms: data.latency_ms,
+          safety_status: data.safety_status,
+          compliance: data.compliance || null,
+          detections_count: Array.isArray(data.detections) ? data.detections.length : 0,
+          detections: Array.isArray(data.detections)
+            ? data.detections.map((detection) => ({
+                class: detection.class,
+                confidence: detection.confidence,
+                bbox: detection.bbox,
+              }))
+            : [],
+          vision_events: data.vision_events || null,
+          output_image_base64: data.output_image_base64 ? "<hidden in compact view>" : null,
+        };
+      }
+
+      function renderJsonPayload() {
+        const jsonEl = document.getElementById("json");
+        if (!latestResponse) {
+          jsonEl.textContent = "Run a detection to see the compact response payload.";
+          return;
+        }
+
+        const payload = showFullPayload ? latestResponse : buildCompactResponse(latestResponse);
+        jsonEl.textContent = JSON.stringify(payload, null, 2);
+        toggleJsonButton.textContent = showFullPayload ? "Show compact payload" : "Show full payload";
+      }
+
+      toggleJsonButton.addEventListener("click", () => {
+        showFullPayload = !showFullPayload;
+        renderJsonPayload();
+      });
 
       function formatNumber(value) {
         if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -619,7 +680,6 @@ def index() -> str:
 
       async function run() {
         const fileInput = document.getElementById("file");
-        const jsonEl = document.getElementById("json");
 
         if (!fileInput.files.length) {
           alert("Choose an image first.");
@@ -629,6 +689,7 @@ def index() -> str:
         const form = new FormData();
         form.append("file", fileInput.files[0]);
 
+        const jsonEl = document.getElementById("json");
         jsonEl.textContent = "Running...";
         statusValue.textContent = "Running";
         countValue.textContent = "0";
@@ -650,7 +711,8 @@ def index() -> str:
         });
 
         const data = await res.json();
-        jsonEl.textContent = JSON.stringify(data, null, 2);
+        latestResponse = data;
+        renderJsonPayload();
 
         const detections = Array.isArray(data.detections) ? data.detections : [];
         renderDetectionList(detections);
